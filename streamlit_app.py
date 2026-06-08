@@ -12,43 +12,83 @@ from langchain_core.runnables import RunnablePassthrough
 
 from dotenv import load_dotenv
 
+st.set_page_config(
+    page_title="Web RAG Chatbot",
+    page_icon="🌐",
+    layout="wide"
+)
+
 load_dotenv()
+with st.sidebar:
+
+    st.header("⚙️ Settings")
+    if st.sidebar.button("🗑️ Clear Chat"):
+        st.session_state.messages = []
+        st.rerun()
+
+    st.markdown("---")
+
+    st.write("**Model:**")
+    st.write("llama-3.3-70b-versatile")
+
+    st.markdown("---")
+
+    st.write("**Tech Stack**")
+    st.write("• LangChain")
+    st.write("• ChromaDB")
+    st.write("• HuggingFace Embeddings")
+    st.write("• Groq")
+    st.write("• Streamlit")
+
+    st.markdown("---")
+
+    st.info("Ask questions about any webpage using RAG.")
+if "messages" not in st.session_state:
+    st.session_state.messages = []
 
 st.title("🌐 Web RAG Chatbot")
+st.caption("Ask questions about any webpage using RAG + LangChain + Groq")
 
 url = st.text_input(
     "Enter Website URL",
     "https://en.wikipedia.org/wiki/Operating_system"
 )
 
-question = st.text_input("Ask a Question")
+question = st.text_area(
+    "Ask a Question",
+    height=120
+)
+@st.cache_resource
+def create_rag_pipeline(url):
 
+    loader = WebBaseLoader(url)
+    docs = loader.load()
+
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=500,
+        chunk_overlap=50
+    )
+
+    chunks = splitter.split_documents(docs)
+
+    embeddings = HuggingFaceEmbeddings(
+        model_name="sentence-transformers/all-MiniLM-L6-v2"
+    )
+
+    vectorstore = Chroma.from_documents(
+        chunks,
+        embeddings
+    )
+
+    return vectorstore.as_retriever(
+        search_kwargs={"k": 4}
+    )
 if st.button("Ask"):
 
-    with st.spinner("Loading webpage..."):
+    with st.spinner("Processing webpage and generating answer... 🤔"):
 
-        loader = WebBaseLoader(url)
-        docs = loader.load()
-
-        splitter = RecursiveCharacterTextSplitter(
-            chunk_size=500,
-            chunk_overlap=50
-        )
-
-        chunks = splitter.split_documents(docs)
-
-        embeddings = HuggingFaceEmbeddings(
-            model_name="sentence-transformers/all-MiniLM-L6-v2"
-        )
-
-        vectorstore = Chroma.from_documents(
-            chunks,
-            embeddings
-        )
-
-        retriever = vectorstore.as_retriever(
-            search_kwargs={"k": 4}
-        )
+        retriever = create_rag_pipeline(url)
+        st.success("Website loaded successfully ✅")
 
         llm = ChatGroq(
             model="llama-3.3-70b-versatile",
@@ -87,5 +127,14 @@ Answer:
 
         answer = chain.invoke(question)
 
-    st.subheader("Answer")
-    st.markdown(answer)
+    st.session_state.messages.append(
+        {"question": question, "answer": answer}
+    )
+
+    for msg in st.session_state.messages:
+
+        with st.chat_message("user"):
+            st.write(msg["question"])
+
+        with st.chat_message("assistant"):
+            st.write(msg["answer"])
