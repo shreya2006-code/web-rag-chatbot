@@ -49,9 +49,30 @@ if "messages" not in st.session_state:
 st.title("🌐 Web RAG Chatbot")
 st.caption("Ask questions about any webpage using RAG + LangChain + Groq")
 
+example_url = st.selectbox(
+    "Choose an Example Website (Optional)",
+    [
+        "None",
+        "Wikipedia OS",
+        "Python Docs",
+        "LangChain Docs",
+        "OpenAI Blog"
+    ]
+)
+url_map = {
+    "Wikipedia OS": "https://en.wikipedia.org/wiki/Operating_system",
+    "Python Docs": "https://docs.python.org/3/",
+    "LangChain Docs": "https://python.langchain.com/docs/introduction/",
+    "OpenAI Blog": "https://openai.com/news/"
+}
+default_url = ""
+
+if example_url != "None":
+    default_url = url_map[example_url]
+
 url = st.text_input(
     "Enter Website URL",
-    "https://en.wikipedia.org/wiki/Operating_system"
+    value=default_url
 )
 
 question = st.text_area(
@@ -138,3 +159,16 @@ Answer:
 
         with st.chat_message("assistant"):
             st.write(msg["answer"])
+
+chat_text = ""
+
+for msg in st.session_state.messages:
+    chat_text += f"User: {msg['question']}\n\n"
+    chat_text += f"AI: {msg['answer']}\n\n"
+    chat_text += "-" * 50 + "\n\n"
+
+st.download_button(
+    "⬇ Download Chat",
+    chat_text,
+    "chat_history.txt"
+)
