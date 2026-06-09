@@ -1,3 +1,5 @@
+import requests
+from bs4 import BeautifulSoup
 import streamlit as st
 
 from langchain_community.document_loaders import WebBaseLoader
@@ -11,6 +13,7 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnablePassthrough
 
 from dotenv import load_dotenv
+from datetime import datetime
 
 st.set_page_config(
     page_title="Web RAG Chatbot",
@@ -45,10 +48,15 @@ with st.sidebar:
     st.info("Ask questions about any webpage using RAG.")
 if "messages" not in st.session_state:
     st.session_state.messages = []
+if "url_history" not in st.session_state:
+    st.session_state.url_history = {}
 
 st.title("🌐 Web RAG Chatbot")
 st.caption("Ask questions about any webpage using RAG + LangChain + Groq")
-
+recent_site = st.selectbox(
+    "🕒 Recent Websites",
+    ["None"] + list(st.session_state.url_history.keys())
+)
 example_url = st.selectbox(
     "Choose an Example Website (Optional)",
     [
@@ -70,22 +78,69 @@ default_url = ""
 if example_url != "None":
     default_url = url_map[example_url]
 
+def get_page_title(url):
+    try:
+        headers = {
+            "User-Agent": "Mozilla/5.0"
+        }
+
+        response = requests.get(
+            url,
+            headers=headers,
+            timeout=5
+        )
+
+        soup = BeautifulSoup(
+            response.text,
+            "html.parser"
+        )
+
+        return soup.title.string.strip()
+
+    except:
+        return "Unknown Page"
+
+selected_url = default_url
+
+if recent_site != "None":
+    selected_url = st.session_state.url_history[recent_site]
+
 url = st.text_input(
     "Enter Website URL",
-    value=default_url
+    value=selected_url
 )
-page_name = url.split("/")[-1].replace("_", " ").title()
 
-st.info(f"📄 Current Page: {page_name}")
+if url:
+    page_title = get_page_title(url)
+    st.info(f"📄 Current Page: {page_title}")
 
 question = st.text_area(
     "Ask a Question",
     height=120
 )
+
+st.caption("💡 Try asking:")
+
+col1, col2 = st.columns(2)
+
+with col1:
+    st.caption("• Summarize this page")
+    st.caption("• What are the key points?")
+
+with col2:
+    st.caption("• Explain like I'm a beginner")
+    st.caption("• What are the advantages?")
+
 @st.cache_resource
 def create_rag_pipeline(url):
 
-    loader = WebBaseLoader(url)
+    from bs4 import SoupStrainer
+    loader = WebBaseLoader(
+        url,
+        bs_kwargs={
+            "parse_only": SoupStrainer("p")
+        }
+    )
     docs = loader.load()
 
     splitter = RecursiveCharacterTextSplitter(
@@ -116,18 +171,25 @@ if st.button("Ask"):
         st.warning("⚠️ Please enter a question")
         st.stop()
 
-    with st.spinner("Processing webpage and generating answer... 🤔"):
+    try:
 
-        retriever = create_rag_pipeline(url)
-        st.success("Website loaded successfully ✅")
-        retrieved_docs = retriever.invoke(question)
+        with st.spinner("Processing webpage and generating answer... 🤔"):
 
-        llm = ChatGroq(
-            model="llama-3.3-70b-versatile",
-            temperature=0.3
-        )
+            retriever = create_rag_pipeline(url)
 
-        prompt = ChatPromptTemplate.from_template("""
+            if page_title not in st.session_state.url_history:
+                st.session_state.url_history[page_title] = url
+
+            st.success("Website loaded successfully ✅")
+
+            retrieved_docs = retriever.invoke(question)
+
+            llm = ChatGroq(
+                model="llama-3.3-70b-versatile",
+                temperature=0.3
+            )
+
+            prompt = ChatPromptTemplate.from_template("""
 Answer the question based only on the following context.
 
 If you cannot find the answer,
@@ -159,22 +221,42 @@ Answer:
 
         answer = chain.invoke(question)
 
+    except Exception:
+
+        st.error(
+            "❌ Could not load webpage. Please check the URL and try again."
+        )
+
+        st.stop()
+
+        
+
     st.session_state.messages.append(
-    {
-        "question": question,
-        "answer": answer,
-        "sources": retrieved_docs
-    }
-)
+        {
+            "question": question,
+            "answer": answer,
+            "sources": retrieved_docs,
+            "time": datetime.now().strftime("%I:%M %p")
+        }
+    )
+    
+
 
     for msg in st.session_state.messages:
 
         with st.chat_message("user"):
+            st.caption(f"🕒 {msg['time']}")
             st.write(msg["question"])
 
         with st.chat_message("assistant"):
-
+            st.caption(f"🕒 {msg['time']}")
             st.write(msg["answer"])
+
+            word_count = len(msg["answer"].split())
+
+            st.caption(
+                f"📊 Words: {word_count} | Sources: {len(msg['sources'])}"
+            )
 
             with st.expander("📚 Sources Used"):
 
