@@ -148,6 +148,7 @@ def create_rag_pipeline(url):
         }
     )
     docs = loader.load()
+    full_page_content = docs[0].page_content
 
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=500,
@@ -165,8 +166,11 @@ def create_rag_pipeline(url):
         embeddings
     )
 
-    return vectorstore.as_retriever(
-        search_kwargs={"k": 10}
+    return (
+        vectorstore.as_retriever(
+            search_kwargs={"k": 4}
+        ),
+        full_page_content
     )
 if ask_clicked or summarize_clicked:
     if summarize_clicked:
@@ -184,7 +188,7 @@ if ask_clicked or summarize_clicked:
 
         with st.spinner("Processing webpage and generating answer... 🤔"):
 
-            retriever = create_rag_pipeline(url)
+            retriever, full_page_content = create_rag_pipeline(url)
 
             if page_title not in st.session_state.url_history:
                 st.session_state.url_history[page_title] = url
@@ -239,17 +243,49 @@ Answer:
                 d.page_content for d in docs
             )
 
-        chain = (
-            {
-                "context": retriever | format_docs,
-                "question": RunnablePassthrough()
-            }
-            | prompt
-            | llm
-            | StrOutputParser()
-        )
+        if summarize_clicked:
 
-        answer = chain.invoke(question)
+            answer = llm.invoke(
+                f"""
+        Summarize the following webpage.
+
+        Provide:
+
+        # Overview
+
+        A concise summary.
+
+        # Key Points
+
+        - Point 1
+        - Point 2
+        - Point 3
+
+        # Important Takeaways
+
+        Main insights.
+
+        Webpage Content:
+
+        {full_page_content[:12000]}
+        """
+            ).content
+
+        else:
+
+            chain = (
+                {
+                    "context": retriever | format_docs,
+                    "question": RunnablePassthrough()
+                }
+                | prompt
+                | llm
+                | StrOutputParser()
+            )
+
+            answer = chain.invoke(question)
+
+       
 
     except Exception:
 
