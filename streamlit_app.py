@@ -74,6 +74,9 @@ url = st.text_input(
     "Enter Website URL",
     value=default_url
 )
+page_name = url.split("/")[-1].replace("_", " ").title()
+
+st.info(f"📄 Current Page: {page_name}")
 
 question = st.text_area(
     "Ask a Question",
@@ -105,11 +108,19 @@ def create_rag_pipeline(url):
         search_kwargs={"k": 4}
     )
 if st.button("Ask"):
+    if not url.startswith(("http://", "https://")):
+        st.error("⚠️ Please enter a valid URL")
+        st.stop()
+
+    if question.strip() == "":
+        st.warning("⚠️ Please enter a question")
+        st.stop()
 
     with st.spinner("Processing webpage and generating answer... 🤔"):
 
         retriever = create_rag_pipeline(url)
         st.success("Website loaded successfully ✅")
+        retrieved_docs = retriever.invoke(question)
 
         llm = ChatGroq(
             model="llama-3.3-70b-versatile",
@@ -149,8 +160,12 @@ Answer:
         answer = chain.invoke(question)
 
     st.session_state.messages.append(
-        {"question": question, "answer": answer}
-    )
+    {
+        "question": question,
+        "answer": answer,
+        "sources": retrieved_docs
+    }
+)
 
     for msg in st.session_state.messages:
 
@@ -158,7 +173,16 @@ Answer:
             st.write(msg["question"])
 
         with st.chat_message("assistant"):
+
             st.write(msg["answer"])
+
+            with st.expander("📚 Sources Used"):
+
+                for i, doc in enumerate(msg["sources"], 1):
+
+                    st.markdown(f"### Chunk {i}")
+
+                    st.write(doc.page_content[:500])
 
 chat_text = ""
 
