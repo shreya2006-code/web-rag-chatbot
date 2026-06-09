@@ -118,7 +118,13 @@ question = st.text_area(
     "Ask a Question",
     height=120
 )
+col1, col2 = st.columns(2)
 
+with col1:
+    ask_clicked = st.button("Ask")
+
+with col2:
+    summarize_clicked = st.button("📝 Summarize Page")
 st.caption("💡 Try asking:")
 
 col1, col2 = st.columns(2)
@@ -160,9 +166,12 @@ def create_rag_pipeline(url):
     )
 
     return vectorstore.as_retriever(
-        search_kwargs={"k": 4}
+        search_kwargs={"k": 10}
     )
-if st.button("Ask"):
+if ask_clicked or summarize_clicked:
+    if summarize_clicked:
+        question = "Summarize this page with key points and takeaways"
+
     if not url.startswith(("http://", "https://")):
         st.error("⚠️ Please enter a valid URL")
         st.stop()
@@ -190,10 +199,31 @@ if st.button("Ask"):
             )
 
             prompt = ChatPromptTemplate.from_template("""
-Answer the question based only on the following context.
+You are a helpful assistant.
 
-If you cannot find the answer,
-say "Not found in the page."
+Use ONLY the webpage context provided.
+
+If the user asks for a summary:
+
+Provide:
+
+# Overview
+
+A concise summary.
+
+# Key Points
+
+- Point 1
+- Point 2
+- Point 3
+
+# Important Takeaways
+
+The most important insights from the page.
+
+If the answer is not found in the context, reply:
+
+"Not found in the page."
 
 Context:
 {context}
@@ -250,7 +280,7 @@ Answer:
 
         with st.chat_message("assistant"):
             st.caption(f"🕒 {msg['time']}")
-            st.write(msg["answer"])
+            st.markdown(msg["answer"])
 
             word_count = len(msg["answer"].split())
 
