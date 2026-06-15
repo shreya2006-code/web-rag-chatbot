@@ -14,6 +14,10 @@ from langchain_core.runnables import RunnablePassthrough
 
 from dotenv import load_dotenv
 from datetime import datetime
+import time
+embeddings = HuggingFaceEmbeddings(
+    model_name="sentence-transformers/all-MiniLM-L6-v2"
+)
 
 st.set_page_config(
     page_title="Web RAG Chatbot",
@@ -50,6 +54,15 @@ if "messages" not in st.session_state:
     st.session_state.messages = []
 if "url_history" not in st.session_state:
     st.session_state.url_history = {}
+
+if "current_url" not in st.session_state:
+    st.session_state.current_url = None
+
+if "current_retriever" not in st.session_state:
+    st.session_state.current_retriever = None
+
+if "current_page_content" not in st.session_state:
+    st.session_state.current_page_content = None
 
 st.title("🌐 Web RAG Chatbot")
 st.caption("Ask questions about any webpage using RAG + LangChain + Groq")
@@ -157,9 +170,7 @@ def create_rag_pipeline(url):
 
     chunks = splitter.split_documents(docs)
 
-    embeddings = HuggingFaceEmbeddings(
-        model_name="sentence-transformers/all-MiniLM-L6-v2"
-    )
+    
 
     vectorstore = Chroma.from_documents(
         chunks,
@@ -168,7 +179,7 @@ def create_rag_pipeline(url):
 
     return (
         vectorstore.as_retriever(
-            search_kwargs={"k": 4}
+            search_kwargs={"k": 2}
         ),
         full_page_content
     )
@@ -185,10 +196,21 @@ if ask_clicked or summarize_clicked:
         st.stop()
 
     try:
-
+        start_time = time.time()
         with st.spinner("Processing webpage and generating answer... 🤔"):
 
-            retriever, full_page_content = create_rag_pipeline(url)
+            if url == st.session_state.current_url:
+
+                retriever = st.session_state.current_retriever
+                full_page_content = st.session_state.current_page_content
+
+            else:
+
+                retriever, full_page_content = create_rag_pipeline(url)
+
+                st.session_state.current_url = url
+                st.session_state.current_retriever = retriever
+                st.session_state.current_page_content = full_page_content
 
             if page_title not in st.session_state.url_history:
                 st.session_state.url_history[page_title] = url
@@ -267,7 +289,7 @@ Answer:
 
         Webpage Content:
 
-        {full_page_content[:12000]}
+        {full_page_content[:8000]}
         """
             ).content
 
@@ -284,6 +306,10 @@ Answer:
             )
 
             answer = chain.invoke(question)
+            response_time = round(
+                time.time() - start_time,
+                2
+            )
 
        
 
@@ -302,7 +328,8 @@ Answer:
             "question": question,
             "answer": answer,
             "sources": retrieved_docs,
-            "time": datetime.now().strftime("%I:%M %p")
+            "time": datetime.now().strftime("%I:%M %p"),
+            "response_time": response_time
         }
     )
     
@@ -322,6 +349,9 @@ Answer:
 
             st.caption(
                 f"📊 Words: {word_count} | Sources: {len(msg['sources'])}"
+            )
+            st.caption(
+                f"⏱ Generated in {msg['response_time']} sec"
             )
 
             with st.expander("📚 Sources Used"):
