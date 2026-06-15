@@ -118,10 +118,26 @@ selected_url = default_url
 if recent_site != "None":
     selected_url = st.session_state.url_history[recent_site]
 
-url = st.text_input(
-    "Enter Website URL",
-    value=selected_url
-)
+if "website_count" not in st.session_state:
+    st.session_state.website_count = 1
+
+website_urls = []
+
+for i in range(st.session_state.website_count):
+
+    website_urls.append(
+        st.text_input(
+            f"Website URL {i+1}",
+            value=selected_url if i == 0 else "",
+            key=f"url_{i}"
+        )
+    )
+
+if st.button("➕ Add Website"):
+    st.session_state.website_count += 1
+    
+
+url = website_urls[0]
 
 if url:
     page_title = get_page_title(url)
@@ -154,21 +170,33 @@ with col2:
 def create_rag_pipeline(url):
 
     from bs4 import SoupStrainer
-    loader = WebBaseLoader(
-        url,
-        bs_kwargs={
-            "parse_only": SoupStrainer("p")
-        }
-    )
-    docs = loader.load()
-    full_page_content = docs[0].page_content
+    
+
+    #-------------
+    all_docs = []
+    full_page_content = ""
+
+    for single_url in url:
+
+        loader = WebBaseLoader(
+            single_url,
+            bs_kwargs={
+                "parse_only": SoupStrainer("p")
+            }
+        )
+
+        docs = loader.load()
+
+        all_docs.extend(docs)
+
+        full_page_content += "\n\n" + docs[0].page_content
 
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=500,
         chunk_overlap=50
     )
 
-    chunks = splitter.split_documents(docs)
+    chunks = splitter.split_documents(all_docs)
 
     
 
@@ -187,9 +215,15 @@ if ask_clicked or summarize_clicked:
     if summarize_clicked:
         question = "Summarize this page with key points and takeaways"
 
-    if not url.startswith(("http://", "https://")):
-        st.error("⚠️ Please enter a valid URL")
-        st.stop()
+    for u in website_urls:
+
+        if u.strip() and not u.startswith(("http://", "https://")):
+
+            st.error(
+                f"⚠️ Invalid URL: {u}"
+            )
+
+            st.stop()
 
     if question.strip() == "":
         st.warning("⚠️ Please enter a question")
@@ -206,7 +240,12 @@ if ask_clicked or summarize_clicked:
 
             else:
 
-                retriever, full_page_content = create_rag_pipeline(url)
+                valid_urls = [
+                    u for u in website_urls
+                    if u.strip()
+                ]
+
+                retriever, full_page_content = create_rag_pipeline(valid_urls)
 
                 st.session_state.current_url = url
                 st.session_state.current_retriever = retriever
